@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SENTINEL - Read-Only Enterprise Agent Documentation</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 18mm 16mm 18mm 16mm;
+      @bottom-right {
+        content: "Page " counter(page);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 8pt;
+        color: #64748b;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.5;
+      color: #1e293b;
+      background-color: #ffffff;
+      margin: 0;
+      padding: 20px 40px;
+    }
+
+    .no-print-bar {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 12px 20px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .no-print-bar button {
+      background: #0284c7;
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      font-weight: 600;
+      font-size: 13px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .no-print-bar button:hover {
+      background: #0369a1;
+    }
+
+    @media print {
+      .no-print-bar {
+        display: none !important;
+      }
+      body {
+        padding: 0;
+      }
+      h1, h2, h3 {
+        page-break-after: avoid;
+      }
+      table, pre, .card, .banner {
+        page-break-inside: avoid;
+      }
+    }
+
+    /* Executive Banner */
+    .banner {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #ffffff;
+      padding: 24px 28px;
+      border-radius: 10px;
+      border-left: 6px solid #0284c7;
+      margin-bottom: 28px;
+    }
+
+    .banner h1 {
+      margin: 0 0 6px 0;
+      font-size: 20pt;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #ffffff;
+      border: none;
+      padding: 0;
+    }
+
+    .banner .subtitle {
+      font-size: 11pt;
+      color: #38bdf8;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .banner .meta {
+      font-size: 8.5pt;
+      color: #94a3b8;
+    }
+
+    /* Headings */
+    h1 {
+      font-size: 15pt;
+      font-weight: 700;
+      color: #0f172a;
+      border-bottom: 2px solid #0284c7;
+      padding-bottom: 4px;
+      margin-top: 26px;
+      margin-bottom: 12px;
+      letter-spacing: -0.3px;
+    }
+
+    h2 {
+      font-size: 12.5pt;
+      font-weight: 700;
+      color: #1e293b;
+      margin-top: 20px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 3px;
+    }
+
+    h3 {
+      font-size: 10.5pt;
+      font-weight: 600;
+      color: #334155;
+      margin-top: 14px;
+      margin-bottom: 6px;
+    }
+
+    p {
+      margin-top: 0;
+      margin-bottom: 8px;
+      color: #334155;
+    }
+
+    ul, ol {
+      margin-top: 0;
+      margin-bottom: 10px;
+      padding-left: 20px;
+    }
+
+    li {
+      margin-bottom: 4px;
+      color: #334155;
+    }
+
+    strong {
+      color: #0f172a;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      margin-bottom: 16px;
+      font-size: 8.5pt;
+    }
+
+    th {
+      background-color: #0f172a;
+      color: #ffffff;
+      text-align: left;
+      padding: 7px 10px;
+      font-weight: 600;
+      border: 1px solid #0f172a;
+    }
+
+    td {
+      padding: 6px 10px;
+      border: 1px solid #e2e8f0;
+      color: #334155;
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td {
+      background-color: #f8fafc;
+    }
+
+    /* Code Blocks */
+    pre {
+      background-color: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-family: "Consolas", "Courier New", monospace;
+      font-size: 7.8pt;
+      line-height: 1.4;
+      color: #0f172a;
+      overflow-x: auto;
+      margin-top: 6px;
+      margin-bottom: 12px;
+    }
+
+    code {
+      font-family: "Consolas", "Courier New", monospace;
+      font-size: 8.5pt;
+      background-color: #f1f5f9;
+      color: #0369a1;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    /* Badges & Alerts */
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 7.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .badge-blue { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+    .badge-green { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+    .badge-red { background: #ffe4e6; color: #be123c; border: 1px solid #fecdd3; }
+
+    .callout {
+      background-color: #f0f9ff;
+      border-left: 4px solid #0284c7;
+      padding: 10px 14px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      font-size: 9pt;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="no-print-bar">
+    <div>
+      <strong style="color: #38bdf8;">PDF Generation & Print View</strong>
+      <div style="font-size: 11px; color: #94a3b8;">Click the button on the right to save or print this document as a PDF.</div>
+    </div>
+    <button onclick="window.print()">
+      <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>
+      Print / Save as PDF
+    </button>
+  </div>
+
+  <div class="banner">
+    <h1>SENTINEL &middot; Read-Only Enterprise Agent</h1>
+    <div class="subtitle">Complete Architecture, Security Invariants & System Reference Guide</div>
+    <div class="meta">Specification: Autonomy Ladder Days 1–6 & Implementation Guide (§1–§14) &middot; Enterprise Security Compliance</div>
+  </div>
+
+  <h1>1. What is the Project?</h1>
+  <p>The <strong>Read-Only Enterprise Agent</strong> (codenamed <strong>SENTINEL</strong>) is a production-grade, secure, read-only AI intelligence platform designed according to the <strong>Autonomy Ladder Practitioner Guide: Building a Read-Only Enterprise Agent (Days 1–6)</strong> and <strong>Implementation Guide (§1–§14)</strong>.</p>
+
+  <h3>1.1 Core Mission &amp; The "Safe by Construction" Principle</h3>
+  <p>Most AI agents fail in regulated enterprise environments because they are granted broad read/write capabilities or rely on "prompt instructions" to prevent data leakage. SENTINEL operates on the principle of <strong>Safe by Construction</strong>:</p>
+  <ul>
+    <li><strong>Absolute Read-Only Guarantee</strong>: There are zero write, mutation, execution, or deletion endpoints or tools across the estate.</li>
+    <li><strong>Cryptographic Access Control</strong>: Every incoming request must carry an <strong>RS256-signed JWT</strong>. Roles, regions, and departments are cryptographically verified and bound to caller claims.</li>
+    <li><strong>In-Query Pre-Filtering</strong>: Confidential documents and database rows are filtered <em>inside</em> SQL queries and retrieval indexes using caller entitlements—never retrieved first and filtered later.</li>
+    <li><strong>Strict Output Contract</strong>: The agent never responds with raw, unconstrained text. Every response is a strictly typed JSON object where <strong>every claim requires empirical evidence citations</strong> (<code>min_length=1</code>), and "I cannot answer this" is a valid, structured outcome.</li>
+  </ul>
+
+  <h3>1.2 The Primary Access-Control Defect Solved: The "Context Carry-Over Trap"</h3>
+  <p>In conventional conversational AI, conversation turns carry forward previous responses, retrieved document chunks, and tool outputs. This creates a severe security vulnerability:</p>
+  <div class="callout">
+    <strong>The Trap:</strong> If User 1 (e.g., a Finance Director) queries sensitive invoice or payroll data, and User 2 (e.g., an unprivileged employee) joins the shared session and asks <em>"What was the total amount of that?"</em>, traditional agents use the prior turn's retrieved context to answer User 2, leaking privileged data.<br><br>
+    <strong>SENTINEL's Solution:</strong> The agent <strong>never</strong> carries forward retrieved chunks, tool rows, or evidence. It carries forward <strong>only the rewritten standalone question</strong> (e.g., <em>"What was the total amount for supplier SUP-001 open invoices in EMEA?"</em>). Retrieval, tool permission checks, and database filters are re-executed from scratch against the <strong>current turn caller's verified claims</strong>. If User 2 lacks the <code>finance</code> role, they receive <strong>zero</strong> data, and the request is safely declined.
+  </div>
+
+  <h1>2. Existing Solutions vs. SENTINEL</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>Capability / Architecture</th>
+        <th>Traditional RAG (LangChain / LlamaIndex)</th>
+        <th>Enterprise Copilots</th>
+        <th>SENTINEL Read-Only Enterprise Agent</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Data Filtering Mechanism</strong></td>
+        <td>Post-retrieval filtering (retrieve top-k, then filter in memory)</td>
+        <td>Workspace-level ACL or post-retrieval trimming</td>
+        <td><strong>In-Query Pre-Filtering</strong> (<code>WHERE entitlements &amp;&amp; caller_entitlements</code>)</td>
+      </tr>
+      <tr>
+        <td><strong>Multi-turn Session Security</strong></td>
+        <td>Carries all previous chunks and messages in memory (leaks data)</td>
+        <td>Carries full session context to chat thread</td>
+        <td><strong>Carries only rewritten question</strong>; re-evaluates all permissions per turn</td>
+      </tr>
+      <tr>
+        <td><strong>Context History Window</strong></td>
+        <td>Unbounded sliding window (causes hallucination &amp; token drift)</td>
+        <td>Large token window (subject to prompt injection)</td>
+        <td><strong>Strict 2-turn history cap</strong> (<code>history[-2:]</code>)</td>
+      </tr>
+      <tr>
+        <td><strong>Output Grounding</strong></td>
+        <td>Unstructured markdown; hallucinated citations common</td>
+        <td>Plain text with inline web/file links</td>
+        <td><strong>Typed Pydantic Output Contract</strong> (<code>min_length=1</code> evidence per finding)</td>
+      </tr>
+      <tr>
+        <td><strong>Honesty &amp; Declination</strong></td>
+        <td>Tries to hallucinate an answer when data is absent</td>
+        <td>Apologetic conversational refusal</td>
+        <td><strong>Deterministic <code>Answer.declined()</code></strong> naming missing sources &amp; limits</td>
+      </tr>
+      <tr>
+        <td><strong>Tool Safety Verification</strong></td>
+        <td>Runtime prompts telling the model which tools to call</td>
+        <td>API key pass-through; runtime exceptions</td>
+        <td><strong>4 Import-time constraints</strong> on tool registration; zero mutation tools</td>
+      </tr>
+      <tr>
+        <td><strong>Data Alignment</strong></td>
+        <td>Prompting LLM to convert currencies and join records</td>
+        <td>LLM attempts table joins in memory (unreliable)</td>
+        <td><strong>Deterministic Python code alignment</strong> (FX normalization, time bucketing)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h1>3. Core Features</h1>
+  <ol>
+    <li><strong>Follow-Up Rewriting into Standalone Questions</strong> (<code>src/session/resolver.py</code>): Ambiguous conversational follow-ups are rewritten into fully self-contained standalone questions using recent turns before retrieval or tool execution.</li>
+    <li><strong>Strict Two-Turn History Cap</strong> (<code>src/session/store.py</code>): Contextual history retrieval is strictly capped at the last two turns (<code>history[-2:]</code>) to prevent context degradation and drift.</li>
+    <li><strong><code>is_followup</code> Pass-Through Flag</strong> (<code>src/answer/schema.py</code>): Callers can explicitly specify whether a request is a follow-up via <code>is_followup: bool | None</code>.</li>
+    <li><strong>Per-Turn Caller Identity in Session Store</strong> (<code>src/session/schema.py</code>): Multi-user collaborative sessions track the specific <code>caller_identity</code> on each turn rather than assuming a single session owner.</li>
+    <li><strong>Entitlement Isolation &amp; The Trap Avoidance</strong> (<code>src/answer/investigate.py</code>): All previous chunks and tool rows are discarded between turns. Retrieval and tool permissions are re-evaluated from scratch against the current turn caller's claims.</li>
+    <li><strong>Output Contract &amp; The 7 Honesty Behaviors</strong> (<code>src/answer/schema.py</code>, <code>src/answer/synthesis.py</code>):
+      <ul>
+        <li><strong>Rule 1</strong>: Grounded claims enforcing <code>min_length=1</code> on <code>evidence</code>.</li>
+        <li><strong>Rule 2</strong>: Untrusted content attribution reported with <code>confidence="low"</code>.</li>
+        <li><strong>Rule 3</strong>: Declining for want of evidence, explicitly naming <code>missing_sources</code>.</li>
+        <li><strong>Rule 4</strong>: Scope limits derived in code directly from claims.</li>
+        <li><strong>Rule 5</strong>: Row limit truncation returning <code>kind="partial"</code>.</li>
+        <li><strong>Rule 6</strong>: Plausible hypotheses investigated and disproven listed in <code>considered_and_rejected</code>.</li>
+        <li><strong>Rule 7</strong>: Unanswered topics explicitly recorded in <code>unanswered</code>.</li>
+      </ul>
+    </li>
+    <li><strong>Four Import-Time Constraints on Read Tools</strong> (<code>src/tools/spec.py</code>): Validates <code>extra="forbid"</code>, row limits &le; 1000, non-empty description, and unique tool names.</li>
+    <li><strong>Real Enterprise Data Estate &amp; Inspector</strong> (<code>src/db/database.py</code>, <code>src/db/repository.py</code>): Disk-backed SQLite (<code>platform/estate.db</code>) or PostgreSQL with <code>pgvector</code>, featuring live table inspection and audit logging.</li>
+  </ol>
+
+  <h1>4. Tech Stack Architecture &amp; Comparison</h1>
+  <pre>
+                    ┌───────────────────────────────────────────────┐
+                    │               React 18 + Vite                 │
+                    │         TypeScript + Tailwind CSS UI          │
+                    └───────────────────────┬───────────────────────┘
+                                            │ HTTP / JSON (RS256 JWT)
+                                            ▼
+                    ┌───────────────────────────────────────────────┐
+                    │                FastAPI Gateway                │
+                    │         Rate Limiting (Token Bucket)          │
+                    └───────────────┬───────────────┬───────────────┘
+                                    │               │
+                     Claims Verify  │               │ Trace & Cost
+                                    ▼               ▼
+                    ┌──────────────────┐   ┌────────────────────────┐
+                    │  PyJWT + Crypto  │   │     OpenTelemetry      │
+                    │  (RS256 Pinning) │   │     SDK + Jaeger       │
+                    └──────────────────┘   └────────────────────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────────────────────┐
+                    │            Orchestration Pipeline             │
+                    │       Follow-up Resolver (2-Turn Cap)         │
+                    │       Deterministic Planner (Claims Filter)   │
+                    └───────────────┬───────────────┬───────────────┘
+                                    │               │
+                    Corpus Search   │               │ Read-Only Tools
+                                    ▼               ▼
+┌───────────────────────────────────────┐   ┌───────────────────────────────────┐
+│     Hybrid Retrieval Engine           │   │    Read-Only Tool Adapters        │
+│  - HNSW Vector + Lexical TSVECTOR     │   │  - ERP (Invoices, POs, Revenue)   │
+│  - In-Query Entitlement Pre-filter    │   │  - Observability (Incidents)      │
+│  - Reciprocal Rank Fusion (RRF)       │   │  - CRM (Pipelines, Org Changes)   │
+└───────────────────┬───────────────────┘   └─────────────────┬─────────────────┘
+                    │                                         │
+                    └───────────────────┬─────────────────────┘
+                                        │ Aligned Evidence
+                                        ▼
+                    ┌───────────────────────────────────────────────┐
+                    │          Deterministic Align Engine           │
+                    │  (FX Normalisation, Time Bucket, Entity Join) │
+                    └───────────────────┬───────────────────────────┘
+                                        │
+                                        ▼
+                    ┌───────────────────────────────────────────────┐
+                    │          Synthesis Engine (7 Rules)           │
+                    │   Ollama / OpenAI Structured Output + Pydantic│
+                    └───────────────────┬───────────────────────────┘
+                                        │
+                                        ▼
+                    ┌───────────────────────────────────────────────┐
+                    │       SQLite / PostgreSQL + pgvector          │
+                    │        Persistent Disk Estate & Logs          │
+                    └───────────────────────────────────────────────┘
+  </pre>
+
+  <h3>4.2 Tech Stack Selection &amp; Alternatives</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Technology Chosen</th>
+        <th>Evaluated Alternative</th>
+        <th>Decisive Rationale for Selection</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>FastAPI + Uvicorn</strong></td>
+        <td>Flask / Django</td>
+        <td>Asynchronous high-throughput, native Pydantic v2 validation integration, automatic OpenAPI documentation, and sub-millisecond route dispatching.</td>
+      </tr>
+      <tr>
+        <td><strong>Pydantic v2</strong></td>
+        <td>Marshmallow / Cerberus</td>
+        <td>Rust-compiled (<code>pydantic-core</code>) offering 10–20x performance speedup. Native support for strict model validation (<code>extra="forbid"</code>), recursive schema parsing, and deterministic field serialization.</td>
+      </tr>
+      <tr>
+        <td><strong>PyJWT + Cryptography</strong></td>
+        <td>Generic Auth Middleware</td>
+        <td>Pinning the <code>RS256</code> algorithm directly in Python prevents algorithm-switching attacks (e.g., forcing HMAC with a public key or <code>none</code> algorithm exploits).</td>
+      </tr>
+      <tr>
+        <td><strong>SQLite + pgvector SQL</strong></td>
+        <td>Pinecone / Chroma / Weaviate</td>
+        <td>External standalone vector DBs decouple metadata from business records. Storing vectors alongside documents and relational tables allows <strong>atomic in-query entitlement pre-filtering</strong> in a single SQL query.</td>
+      </tr>
+      <tr>
+        <td><strong>React 18 + Vite + TS</strong></td>
+        <td>Next.js / Vue</td>
+        <td>Clean single-page architecture with instant Vite HMR. Compile-time typed client matching Pydantic backend models, deployable as a static Nginx container.</td>
+      </tr>
+      <tr>
+        <td><strong>OpenTelemetry SDK</strong></td>
+        <td>Custom Logging / Datadog</td>
+        <td>Vendor-neutral industry standard for distributed tracing. Traces tool latencies, token consumption, and cost tracking across every turn.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h1>5. Comprehensive Directory &amp; File Guide</h1>
+
+  <h3>5.1 Root Files</h3>
+  <ul>
+    <li><code>Makefile</code>: Operational build, test, and lint target shortcuts.</li>
+    <li><code>pyproject.toml</code>: Package metadata (<code>readonly-agent</code>), Python &gt;=3.11 requirements, dependencies, and pytest configuration.</li>
+    <li><code>requirements.txt</code>: Pinned dependency list for reproducible setups.</li>
+    <li><code>run_evals.py</code>: Standalone test and evaluation runner verifying all core requirements.</li>
+  </ul>
+
+  <h3>5.2 Backend Core (<code>src/</code>)</h3>
+  <ul>
+    <li><code>src/main.py</code>: FastAPI application gateway exposing query, auth, data, database, and telemetry endpoints.</li>
+    <li><code>src/config.py</code>: Configuration loader for model profiles, Keycloak URLs, and rate limits.</li>
+    <li><code>src/cli.py</code>: Interactive CLI client for direct terminal querying.</li>
+    <li><strong>Identity</strong> (<code>src/identity/</code>):
+      <ul>
+        <li><code>claims.py</code>: Immutable <code>Claims</code> dataclass and entitlement mapping.</li>
+        <li><code>verify.py</code>: Cryptographic JWT verification pinning RS256 algorithm.</li>
+        <li><code>mock_auth.py</code>: RSA-2048 key generator and dev token minter.</li>
+        <li><code>passwords.py</code>: OWASP PBKDF2-HMAC-SHA256 password hashing with 600,000 iterations.</li>
+        <li><code>users.py</code>: User registration and authentication service.</li>
+      </ul>
+    </li>
+    <li><strong>Answer</strong> (<code>src/answer/</code>):
+      <ul>
+        <li><code>schema.py</code>: Pydantic models for <code>Answer</code>, <code>Finding</code>, and <code>EvidenceRef</code>.</li>
+        <li><code>investigate.py</code>: Central investigation orchestrator and trap eliminator.</li>
+        <li><code>plan.py</code>: Deterministic tool and corpus planner.</li>
+        <li><code>align.py</code>: Deterministic currency normalization, time bucketing, and entity joins.</li>
+        <li><code>synthesis.py</code>: 7-rule honesty synthesis engine.</li>
+      </ul>
+    </li>
+    <li><strong>Session</strong> (<code>src/session/</code>):
+      <ul>
+        <li><code>schema.py</code>: <code>Turn</code> schema tracking per-turn caller identity.</li>
+        <li><code>store.py</code>: Session repository with strict 2-turn history cap.</li>
+        <li><code>resolver.py</code>: Follow-up detector and standalone question rewriter.</li>
+      </ul>
+    </li>
+    <li><strong>Retrieval</strong> (<code>src/retrieval/</code>):
+      <ul>
+        <li><code>store.py</code>: Vector and lexical search engine with in-query entitlement pre-filtering.</li>
+        <li><code>hybrid.py</code>: Reciprocal Rank Fusion (RRF) hybrid retrieval with entitlement-keyed cache.</li>
+      </ul>
+    </li>
+    <li><strong>Tools</strong> (<code>src/tools/</code>):
+      <ul>
+        <li><code>spec.py</code>: <code>@read_tool</code> decorator enforcing 4 import-time checks.</li>
+        <li><code>call.py</code>: Access-controlled tool execution engine.</li>
+        <li><code>adapters/erp.py</code>: ERP adapter for invoices, purchase orders, and revenue.</li>
+        <li><code>adapters/crm.py</code>: CRM adapter for pipelines, org changes, and dealer status.</li>
+        <li><code>adapters/obs.py</code>: Observability adapter for production incidents.</li>
+      </ul>
+    </li>
+    <li><strong>Corpus</strong> (<code>src/corpus/</code>):
+      <ul>
+        <li><code>schema.py</code>: <code>Chunk</code> and <code>SourceDoc</code> data models.</li>
+        <li><code>chunker.py</code>: Structural document chunker preserving headings and clauses.</li>
+        <li><code>pipeline.py</code>: Path-based entitlement pipeline with idempotent content hashing.</li>
+      </ul>
+    </li>
+    <li><strong>Database</strong> (<code>src/db/</code>):
+      <ul>
+        <li><code>database.py</code>: SQLite/PostgreSQL schema manager and dev user seeder.</li>
+        <li><code>repository.py</code>: Access-controlled repository for documents, ERP rows, and audit logs.</li>
+      </ul>
+    </li>
+    <li><strong>Telemetry</strong> (<code>src/telemetry/</code>):
+      <ul>
+        <li><code>setup.py</code>: OpenTelemetry tracer setup with Jaeger OTLP exporter.</li>
+        <li><code>cost.py</code>: Per-request token and dollar cost accounting.</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h3>5.3 Frontend Application (<code>frontend/</code>)</h3>
+  <ul>
+    <li><code>src/App.tsx</code>: Root application component coordinating navigation and authentication state.</li>
+    <li><code>src/api/client.ts</code>: Typed API client with auto-refreshing bearer tokens.</li>
+    <li><code>src/hooks/useAuth.ts</code> &amp; <code>useChat.ts</code>: Authentication and conversational state hooks.</li>
+    <li><strong>18 Modular Components</strong>: <code>Header</code>, <code>Navigation</code>, <code>Sidebar</code>, <code>ChatWindow</code>, <code>QuestionInput</code>, <code>AnswerCard</code>, <code>FindingsPanel</code>, <code>EvidencePanel</code>, <code>FollowupCard</code>, <code>ConsideredRejected</code>, <code>ScopeLimits</code>, <code>TruncatedSources</code>, <code>MissingSources</code>, <code>RequestDetails</code>, <code>DocumentViewerModal</code>, <code>LoginModal</code>, <code>LoadingState</code>, <code>MessageItem</code>.</li>
+    <li><strong>9 Enterprise Views</strong>: <code>OverviewPage</code>, <code>DocumentsPage</code>, <code>EnterpriseDataPage</code>, <code>DatabasePage</code>, <code>SystemsPage</code>, <code>SearchPage</code>, <code>PermissionsPage</code>, <code>ActivityPage</code>, <code>LoginPage</code>.</li>
+  </ul>
+
+  <h1>6. How to Run the Project</h1>
+
+  <h3>6.1 Local Setup</h3>
+  <pre>
+# Terminal 1: Backend API
+.\.venv\Scripts\Activate.ps1
+python seeds/seed.py
+uvicorn src.main:app --reload --port 8000
+
+# Terminal 2: Frontend UI
+cd frontend
+npm install
+npm run dev
+  </pre>
+  <ul>
+    <li><strong>Frontend UI</strong>: http://localhost:5173</li>
+    <li><strong>API &amp; Swagger Docs</strong>: http://localhost:8000/docs</li>
+  </ul>
+
+  <h3>6.2 Running via Docker Compose</h3>
+  <pre>docker compose -f platform/docker-compose.yml up --build -d</pre>
+
+  <h3>6.3 Running Test &amp; Evaluation Suites</h3>
+  <pre>python run_evals.py</pre>
+
+  <h3>6.4 CLI Querying</h3>
+  <pre>python src/cli.py "Show me open invoices for SUP-001 in EMEA" --as-user finance.lead</pre>
+
+  <h3>6.5 Live Persona Demonstration Matrix</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Scenario</th>
+        <th>Persona</th>
+        <th>Query</th>
+        <th>Expected Output</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>E1: Refund Policy</strong></td>
+        <td><code>dana.reyes</code></td>
+        <td>"What is the return window for damaged goods?"</td>
+        <td><span class="badge badge-green">Answer Available</span> 30 days standard, 60 days expedition-grade.</td>
+      </tr>
+      <tr>
+        <td><strong>E2: Revenue Dip</strong></td>
+        <td><code>finance.lead</code></td>
+        <td>"Why was there an EMEA revenue dip last week?"</td>
+        <td><span class="badge badge-green">Answer Available</span> Attributed to checkout 5xx incident; territory reassignment rejected.</td>
+      </tr>
+      <tr>
+        <td><strong>E3: Scope Denial</strong></td>
+        <td><code>finance.lead</code></td>
+        <td>"Show me open invoices for APAC suppliers"</td>
+        <td><span class="badge badge-red">Unable to Answer</span> Denied due to lack of APAC regional entitlement.</td>
+      </tr>
+      <tr>
+        <td><strong>E4: Missing Evidence</strong></td>
+        <td><code>analyst</code></td>
+        <td>"Did checkout incident damage dealer relationships?"</td>
+        <td><span class="badge badge-red">Unable to Answer</span> Declines naming missing dealer sentiment surveys.</td>
+      </tr>
+      <tr>
+        <td><strong>E5: Truncation</strong></td>
+        <td><code>procurement.lead</code></td>
+        <td>"Show me open purchase orders"</td>
+        <td><span class="badge badge-blue">Partial Answer</span> 200 orders returned; limit reached disclosed.</td>
+      </tr>
+      <tr>
+        <td><strong>E6: Untrusted Note</strong></td>
+        <td><code>procurement.lead</code></td>
+        <td>"What is the term of the Meridian agreement?"</td>
+        <td>Contract expiry (March 2027) confirmed; untrusted memo marked low confidence.</td>
+      </tr>
+      <tr>
+        <td><strong>The Trap Prevention</strong></td>
+        <td><code>finance.lead</code> &rarr; <code>dana.reyes</code></td>
+        <td>T1: "Open invoices for SUP-001"<br>T2: "What was the amount of that?"</td>
+        <td>T1 answered for finance lead. T2 rewrites and declines for Dana with <strong>zero data leaked</strong>.</td>
+      </tr>
+    </tbody>
+  </table>
+
+</body>
+</html>

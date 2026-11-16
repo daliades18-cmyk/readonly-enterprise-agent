@@ -1,0 +1,605 @@
+# Complete Architecture & System Documentation: Read-Only Enterprise Agent (SENTINEL)
+
+---
+
+## 1. What is the Project?
+
+The **Read-Only Enterprise Agent** (codenamed **SENTINEL**) is a production-grade, secure, read-only AI intelligence platform designed according to the **Autonomy Ladder Practitioner Guide: Building a Read-Only Enterprise Agent (Days 1–6)** and **Implementation Guide (§1–§14)**.
+
+### 1.1 Core Mission & The "Safe by Construction" Principle
+Most AI agents fail in regulated enterprise environments because they are granted broad read/write capabilities or rely on "prompt instructions" to prevent data leakage. SENTINEL operates on the principle of **Safe by Construction**:
+- **Absolute Read-Only Guarantee**: There are zero write, mutation, execution, or deletion endpoints or tools across the estate.
+- **Cryptographic Access Control**: Every incoming request must carry an **RS256-signed JWT**. Roles, regions, and departments are cryptographically verified and bound to caller claims.
+- **In-Query Pre-Filtering**: Confidential documents and database rows are filtered *inside* SQL queries and retrieval indexes using caller entitlements—never retrieved first and filtered later.
+- **Strict Output Contract**: The agent never responds with raw, unconstrained text. Every response is a strictly typed JSON object where **every claim requires empirical evidence citations** (`min_length=1`), and "I cannot answer this" is a valid, structured outcome.
+
+### 1.2 The Primary Access-Control Defect Solved: The "Context Carry-Over Trap"
+In conventional conversational AI, conversation turns carry forward previous responses, retrieved document chunks, and tool outputs. This creates a severe security vulnerability:
+- **The Trap**: If User 1 (e.g., a Finance Director) queries sensitive invoice or payroll data, and User 2 (e.g., an unprivileged employee) joins the shared session and asks *"What was the total amount of that?"*, traditional agents use the prior turn's retrieved context to answer User 2, leaking privileged data.
+- **SENTINEL's Solution**: The agent **never** carries forward retrieved chunks, tool rows, or evidence. It carries forward **only the rewritten standalone question** (e.g., *"What was the total amount for supplier SUP-001 open invoices in EMEA?"*). Retrieval, tool permission checks, and database filters are re-executed from scratch against the **current turn caller's verified claims**. If User 2 lacks the `finance` role, they receive **zero** data, and the request is safely declined.
+
+---
+
+## 2. Existing Solutions vs. SENTINEL
+
+| Capability / Architecture | Traditional RAG (LangChain / LlamaIndex) | Enterprise Copilots / ChatGPT Enterprise | SENTINEL Read-Only Enterprise Agent |
+| :--- | :--- | :--- | :--- |
+| **Data Filtering Mechanism** | Post-retrieval filtering (retrieve top-k, then filter in memory) | Workspace-level ACL or post-retrieval trimming | **In-Query Pre-Filtering** (`WHERE entitlements && caller_entitlements`) |
+| **Multi-turn Session Security** | Carries all previous chunks and messages in memory (leaks data) | Carries full session context to chat thread | **Carries only rewritten question**; re-evaluates all permissions per turn |
+| **Context History Window** | Unbounded sliding window (causes hallucination & token drift) | Large token window (subject to prompt injection) | **Strict 2-turn history cap** (`history[-2:]`) |
+| **Output Grounding** | Unstructured markdown; hallucinated citations common | Plain text with inline web/file links | **Typed Pydantic Output Contract** (`min_length=1` evidence per finding) |
+| **Honesty & Declination** | Tries to hallucinate an answer when data is absent | Apologetic conversational refusal | **Deterministic `Answer.declined()`** naming missing sources & limits |
+| **Tool Safety Verification** | Runtime prompts telling the model which tools to call | API key pass-through; runtime exceptions | **4 Import-time constraints** on tool registration; zero mutation tools |
+| **Data Alignment** | Prompting LLM to convert currencies and join records | LLM attempts table joins in memory (unreliable) | **Deterministic Python code alignment** (FX normalization, time bucketing) |
+
+---
+
+## 3. Core Features
+
+1. **Follow-Up Rewriting into Standalone Questions** (`src/session/resolver.py`)
+   - Ambiguous queries (*"What was the amount of that?"*, *"Show me the ones from EMEA"*) are rewritten into self-contained questions before retrieval or tool execution.
+   - The rewritten question is surfaced directly to the user in the `rewritten_question` field for complete auditability.
+2. **Strict Two-Turn History Cap** (`src/session/store.py`)
+   - Contextual history retrieval is strictly capped at `history[-2:]` to prevent prompt degradation, context pollution, and cross-turn drift.
+3. **`is_followup` Pass-Through Flag** (`src/answer/schema.py`)
+   - Callers can explicitly pass an `is_followup` boolean flag or let the heuristic/classifier detect it automatically.
+4. **Per-Turn Caller Identity in Session Store** (`src/session/schema.py`)
+   - Multi-user collaborative sessions track the specific `caller_identity` (JWT `sub`) on each turn rather than assuming a static session owner.
+5. **Entitlement Isolation & Trap Elimination** (`src/answer/investigate.py`)
+   - Prior evidence chunks and tool records are discarded between turns. Permissions are re-checked per turn.
+6. **Output Contract & The 7 Honesty Behaviors** (`src/answer/schema.py`, `src/answer/synthesis.py`):
+   - **Rule 1: Grounded Claims**: Every finding enforces `min_length=1` on `evidence` via Pydantic schema validation.
+   - **Rule 2: Untrusted Content Attribution**: Content from outside the organization (e.g., supplier notes) is flagged `trusted=False`, assigned `confidence="low"`, and attributed rather than adopted as fact.
+   - **Rule 3: Declining for Want of Evidence**: Returns `Answer.declined()` and explicitly lists `missing_sources`.
+   - **Rule 4: Scope Limits in Code**: Regional/departmental limits are computed from caller claims in code—never hallucinated by the model.
+   - **Rule 5: Row Limit Truncation**: When queries hit row limits (e.g., 200 purchase orders), `kind="partial"` is returned, naming `truncated_sources`.
+   - **Rule 6: Hypotheses Considered and Rejected**: Plausible alternative explanations investigated and disproven are explicitly listed in `considered_and_rejected`.
+   - **Rule 7: Explicit Unanswered Topics**: Topics that could not be verified are isolated in `unanswered`.
+7. **Four Import-Time Constraints on Read Tools** (`src/tools/spec.py`):
+   - Input model must declare `extra="forbid"`.
+   - Row limits must be between `1` and `1000`.
+   - Tool description must be non-empty.
+   - Tool names must be unique.
+8. **Real Enterprise Data Estate & Inspector** (`src/db/database.py`, `src/db/repository.py`):
+   - Persistent disk-backed SQLite (`platform/estate.db`) or PostgreSQL with `pgvector`.
+   - Direct web inspection of documents, chunks, ERP invoices, purchase orders, incidents, and audit logs.
+
+---
+
+## 4. Tech Stack Architecture & Comparison
+
+### 4.1 Tech Stack Components
+
+```
+                    ┌───────────────────────────────────────────────┐
+                    │               React 18 + Vite                 │
+                    │         TypeScript + Tailwind CSS UI          │
+                    └───────────────────────┬───────────────────────┘
+                                            │ HTTP / JSON (RS256 JWT)
+                                            ▼
+                    ┌───────────────────────────────────────────────┐
+                    │                FastAPI Gateway                │
+                    │         Rate Limiting (Token Bucket)          │
+                    └───────────────┬───────────────┬───────────────┘
+                                    │               │
+                     Claims Verify  │               │ Trace & Cost
+                                    ▼               ▼
+                    ┌──────────────────┐   ┌────────────────────────┐
+                    │  PyJWT + Crypto  │   │     OpenTelemetry      │
+                    │  (RS256 Pinning) │   │     SDK + Jaeger       │
+                    └──────────────────┘   └────────────────────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────────────────────┐
+                    │            Orchestration Pipeline             │
+                    │       Follow-up Resolver (2-Turn Cap)         │
+                    │       Deterministic Planner (Claims Filter)   │
+                    └───────────────┬───────────────┬───────────────┘
+                                    │               │
+                    Corpus Search   │               │ Read-Only Tools
+                                    ▼               ▼
+┌───────────────────────────────────────┐   ┌───────────────────────────────────┐
+│     Hybrid Retrieval Engine           │   │    Read-Only Tool Adapters        │
+│  - HNSW Vector + Lexical TSVECTOR     │   │  - ERP (Invoices, POs, Revenue)   │
+│  - In-Query Entitlement Pre-filter    │   │  - Observability (Incidents)      │
+│  - Reciprocal Rank Fusion (RRF)       │   │  - CRM (Pipelines, Org Changes)   │
+└───────────────────┬───────────────────┘   └─────────────────┬─────────────────┘
+                    │                                         │
+                    └───────────────────┬─────────────────────┘
+                                        │ Aligned Evidence
+                                        ▼
+                    ┌───────────────────────────────────────────────┐
+                    │          Deterministic Align Engine           │
+                    │  (FX Normalisation, Time Bucket, Entity Join) │
+                    └───────────────────┬───────────────────────────┘
+                                        │
+                                        ▼
+                    ┌───────────────────────────────────────────────┐
+                    │          Synthesis Engine (7 Rules)           │
+                    │   Ollama / OpenAI Structured Output + Pydantic│
+                    └───────────────────┬───────────────────────────┘
+                                        │
+                                        ▼
+                    ┌───────────────────────────────────────────────┐
+                    │       SQLite / PostgreSQL + pgvector          │
+                    │        Persistent Disk Estate & Logs          │
+                    └───────────────────────────────────────────────┘
+```
+
+### 4.2 Why This Tech Stack vs. Alternatives
+
+| Technology Chosen | Evaluated Alternative | Decisive Rationale for Selection |
+| :--- | :--- | :--- |
+| **FastAPI + Uvicorn** | Flask / Django | Asynchronous high-throughput, native Pydantic v2 validation integration, automatic OpenAPI documentation, and sub-millisecond route dispatching. |
+| **Pydantic v2** | Marshmallow / Cerberus | Rust-compiled (`pydantic-core`) offering 10–20x performance speedup. Native support for strict model validation (`extra="forbid"`), recursive schema parsing, and deterministic field serialization. |
+| **PyJWT + Cryptography** | Generic Auth Middleware | Pinning the `RS256` algorithm directly in Python prevents algorithm-switching attacks (e.g., forcing HMAC with a public key or `none` algorithm exploits). |
+| **SQLite + pgvector SQL** | Pinecone / Chroma / Weaviate | External standalone vector DBs decouple metadata from business records. Storing vectors alongside documents and relational tables allows **atomic in-query entitlement pre-filtering** in a single SQL query. |
+| **React 18 + Vite + TS** | Next.js / Vue | Clean single-page architecture with instant Vite HMR. Compile-time typed client matching Pydantic backend models, deployable as a static Nginx container. |
+| **OpenTelemetry SDK** | Custom Logging / Datadog | Vendor-neutral industry standard for distributed tracing. Traces tool latencies, token consumption, and cost tracking across every turn. |
+
+---
+
+## 5. End-to-End Request Flow & Interaction
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User / Browser
+    participant FE as React Frontend
+    participant API as FastAPI (main.py)
+    participant Auth as Identity (verify.py)
+    participant Res as Resolver (resolver.py)
+    participant Plan as Planner (plan.py)
+    participant Store as HybridStore / DB
+    participant Tools as Read Tools (call.py)
+    participant Align as Alignment (align.py)
+    participant Synth as Synthesis (synthesis.py)
+
+    User->>FE: Submits question ("What was the amount of that?")
+    FE->>API: POST /ask (Bearer JWT + Question + SessionID)
+    API->>Auth: verify(token) [RS256 Algorithm Pinned]
+    Auth-->>API: Claims (subject="dana.reyes", roles=["employee"])
+    API->>Res: resolve_followup(question, history[-2:], ctx)
+    Note over Res: Rewrites to standalone question using previous turn target.<br/>Discards previous evidence chunks!
+    Res-->>API: Active Question: "What was the amount for SUP-001 invoices in EMEA?"
+    API->>Plan: build_plan(active_question, visible_tools(claims))
+    Note over Plan: Drops tools caller lacks roles for (e.g. get_open_invoices requires 'finance')
+    Plan-->>API: Plan(calls=[get_open_invoices], needs_corpus=False)
+    API->>Tools: call_read_tool("get_open_invoices", args, ctx)
+    Note over Tools: Role Check: 'finance' NOT in caller roles!<br/>Raises Denied("DENIED_IDENTITY")
+    Tools-->>API: Denied: Missing role 'finance'
+    API->>Synth: Synthesise Answer (Scope Denial detected)
+    Note over Synth: Rule 3 & 4: Construct Answer.declined()<br/>Missing sources: ["Finance role entitlement"]
+    Synth-->>API: Typed Answer(kind="declined", rewritten_question=..., findings=[])
+    API->>Store: Record Turn with caller_identity="dana.reyes" & Audit Log
+    API-->>FE: Return JSON Answer Object
+    FE-->>User: Renders Red Declination Card + Rewritten Question Banner
+```
+
+---
+
+## 6. Comprehensive Directory & File Guide
+
+```
+c:\projects\agentic ai\
+├── platform/               # Infrastructure, DB, Auth & Deployment
+├── seeds/                  # Seed data, sample corpus & DB population
+├── src/                    # Backend Python Application Core
+│   ├── answer/             # Planning, Alignment, Synthesis & Output Contract
+│   ├── corpus/             # Document Schemas, Structural Chunker & Ingestion
+│   ├── db/                 # Database Connection, SQLite/Postgres Engine & Repo
+│   ├── identity/           # JWT Verification, Claims, Users & PBKDF2 Password Hashing
+│   ├── llm/                # LLM Client (Ollama/OpenAI), Structured Output & Prompts
+│   ├── retrieval/          # Vector, Lexical & Reciprocal Rank Fusion (RRF) Store
+│   ├── session/            # Multi-turn Session Store, History Cap & Follow-up Resolver
+│   ├── telemetry/          # OpenTelemetry Setup, Spans & Cost Accounting
+│   └── tools/              # Read Tool Decorator, 4 Import Checks & Adapters
+├── tests/                  # Complete Pytest & Verification Suites
+├── frontend/               # React 18 + TypeScript + Tailwind UI
+│   ├── src/
+│   │   ├── api/            # Typed API Client & Token Management
+│   │   ├── components/     # UI Component Hierarchy (18 components)
+│   │   ├── hooks/          # Custom State Hooks (useAuth, useChat)
+│   │   ├── pages/          # 9 Dedicated Enterprise Application Views
+│   │   └── types/          # TypeScript Type Definitions
+├── Makefile                # Operational Build, Test & Lint Targets
+├── pyproject.toml          # Project Metadata & Python Dependencies
+├── requirements.txt        # Frozen Python Dependencies
+└── run_evals.py            # Standalone Test & Evaluation Suite Runner
+```
+
+---
+
+### 6.1 Root Files
+
+- `Makefile`: Provides standard operational command shortcuts (`make dev`, `make test`, `make lint`, `make seed`, `make docker-up`).
+- `pyproject.toml`: Defines package metadata (`readonly-agent`), build system configuration, Python requirements (`>=3.11`), production dependencies (`fastapi`, `pydantic>=2.9`, `pyjwt`, `psycopg`, `pgvector`, `opentelemetry-sdk`), and `pytest` paths.
+- `requirements.txt`: Pinned pip dependency list for reproducible environment setups across Docker and local workstations.
+- `run_evals.py`: Standalone evaluation runner that executes the test suite (Session Entitlement Isolation, 2-Turn History Cap, Worked Examples E1–E6, and DoD Checks) with zero external test framework dependencies.
+
+---
+
+### 6.2 Backend Core (`src/`)
+
+#### Root Modules
+- `src/main.py`:
+  - **What it does**: The primary FastAPI application entry point. Configures CORS, sets up per-subject token-bucket rate limiting (30 req/min, burst 5), exposes endpoints:
+    - `/ask` & `/sessions/{session_id}/ask`: Query execution endpoints.
+    - `/auth/register` & `/auth/login` & `/auth/token`: User registration, authentication, and persona token issuance.
+    - `/api/overview`, `/api/documents`, `/api/data/*`, `/api/systems`, `/api/search`, `/api/security/*`, `/api/database/*`: Enterprise data and security inspector APIs.
+  - **Why it exists**: Serves as the central API gateway connecting client requests to the investigation pipeline and data layer.
+  - **Interconnections**: Imports `verify`, `run_investigation`, and `get_repository`.
+- `src/config.py`:
+  - **What it does**: Centralized configuration management. Loads environment variables (`KEYCLOAK_URL`, `REALM`, `AUDIENCE`, `OTLP_ENDPOINT`) and model role profiles from `platform/profiles/local.yaml`. Defines parameters such as `MAX_QUESTION_CHARS = 2000`, `MAX_CONCURRENT_TOOLS = 6`, and `DEFAULT_BUDGET = 20000`.
+  - **Why it exists**: Decouples environment-specific URLs, model parameters, and rate limits from business logic.
+- `src/cli.py`:
+  - **What it does**: Command-line interface allowing developers and security auditors to run queries directly from the shell (`python src/cli.py "Show me open invoices" --as-user finance.lead`). Prints formatted JSON answers and traces with Jaeger URLs.
+  - **Why it exists**: Enables headless evaluation, script automation, and debugging without launching the frontend.
+
+---
+
+#### Identity Subsystem (`src/identity/`)
+- `src/identity/__init__.py`: Exposes `Claims` and `verify`.
+- `src/identity/claims.py`:
+  - **What it does**: Implements the immutable `Claims` dataclass (`subject`, `roles`, `regions`, `department`, `reports`). Computes the `entitlements` property (`roles | {"region:" + r for r in regions}`).
+  - **Why it exists**: Serves as the entitlement bridge unifying RBAC (roles) and ABAC (regional tags) into a standardized entitlement vocabulary matching corpus tags.
+- `src/identity/verify.py`:
+  - **What it does**: Validates incoming JWT tokens with strict cryptographic constraints: pins the `RS256` algorithm, verifies audience `agent-api`, checks issuer, enforces expiration with a 30-second leeway, and extracts payload into `Claims`.
+  - **Why it exists**: Prevents token forgery, signature bypass, and algorithm downgrade attacks.
+- `src/identity/mock_auth.py`:
+  - **What it does**: Provides development and offline authentication by generating real, cryptographically signed RSA-2048 key pairs (`platform/dev_rsa_key.pem`) and minting valid RS256 JWT tokens for test personas (`finance.lead`, `dana.reyes`, `analyst`, `procurement.lead`, `sales.lead`, `ops.analyst`).
+  - **Why it exists**: Allows offline testing and CI/CD validation without requiring an external Keycloak instance.
+- `src/identity/passwords.py`:
+  - **What it does**: Implements enterprise password security complying with OWASP recommendations: PBKDF2-HMAC-SHA256 with 600,000 iterations, 16-byte cryptographically secure random salts, versioned storage (`pbkdf2_sha256$v1$...`), constant-time verification (`hmac.compare_digest`), and password complexity validation.
+  - **Why it exists**: Secures stored user credentials against brute-force and timing attacks.
+- `src/identity/users.py`:
+  - **What it does**: Manages persistent user registration and credential authentication in the SQLite/PostgreSQL `users` table. Enforces default minimal access (`roles=['employee']`, `regions=['EMEA']`) for newly registered users.
+  - **Why it exists**: Provides real enterprise user provisioning and session authentication.
+
+---
+
+#### Answer Subsystem (`src/answer/`)
+- `src/answer/__init__.py`: Exposes answer schemas and investigation entry points.
+- `src/answer/schema.py`:
+  - **What it does**: Defines the strict Output Contract using Pydantic:
+    - `EvidenceRef`: Specific source locator, timestamp, and data freshness.
+    - `Finding`: Claim text, confidence rating (`high`, `medium`, `low`), and `evidence` with `min_length=1` validation.
+    - `Answer`: Typed outcome (`kind="answered" | "partial" | "declined"`), summary, findings, `considered_and_rejected`, `scope_limits`, `truncated_sources`, `missing_sources`, `rewritten_question`, and `is_followup`.
+    - `StandaloneQuestion`: Schema for rewritten questions with rationale.
+  - **Why it exists**: Prevents unstructured hallucinations by enforcing typed schema boundaries.
+- `src/answer/investigate.py`:
+  - **What it does**: The central execution orchestrator:
+    1. Resolves follow-ups with strict 2-turn history cap.
+    2. Builds execution plan using visible tools.
+    3. Concurrently calls authorized tools and hybrid retrieval.
+    4. Evaluates scope denials.
+    5. Runs deterministic alignment and synthesis.
+    6. Records turns in session store with per-turn caller identity.
+    7. Inserts immutable audit records in the database.
+  - **Why it exists**: Implements the end-to-end read-only query pipeline and enforces the Context Carry-Over Trap avoidance invariant.
+- `src/answer/plan.py`:
+  - **What it does**: Generates a structured execution plan (`Plan`) specifying `needs_corpus`, `corpus_query`, and tool calls (`ToolCall`). Drops any tools the caller does not have permission to execute or that do not exist in the registry.
+  - **Why it exists**: Prevents the LLM from hallucinating unauthorized or non-existent tools.
+- `src/answer/align.py`:
+  - **What it does**: Deterministically aligns raw evidence rows: normalizes foreign currencies (USD, GBP) to EUR base using fixed rates, buckets records by calendar day, and joins entities across systems by entity ID (e.g., matching supplier IDs across invoices and POs) in pure Python code.
+  - **Why it exists**: Eliminates mathematical calculation and data alignment errors caused by model hallucinations.
+- `src/answer/synthesis.py`:
+  - **What it does**: Formulates the final `Answer` object enforcing all 7 honesty rules:
+    - Conversational greetings return user permissions and capabilities.
+    - Scope denials (e.g., non-finance users querying invoices) return explicit declination answers.
+    - Regional mismatches return scope limit descriptions.
+    - Truncated tool outputs return `kind="partial"`.
+    - Missing evidence triggers `Answer.declined()` naming missing sources.
+    - External untrusted notes are marked `confidence="low"`.
+  - **Why it exists**: Guarantees that every response conforms to the Output Contract.
+
+---
+
+#### Session Subsystem (`src/session/`)
+- `src/session/__init__.py`: Exposes session models and store.
+- `src/session/schema.py`:
+  - **What it does**: Defines the `Turn` model (`turn_id`, `caller_identity`, `question`, `rewritten_question`, `is_followup`, `answer_summary`, `evidence_refs`, `tools_called`, `timestamp`).
+  - **Why it exists**: Tracks multi-turn conversational state with explicit per-turn caller identity.
+- `src/session/store.py`:
+  - **What it does**: Thread-safe in-memory session repository. Implements `get_history(session_id, cap=2)`, strictly enforcing the two-turn history cap.
+  - **Why it exists**: Manages shared sessions while preventing context degradation and cross-turn memory leaks.
+- `src/session/resolver.py`:
+  - **What it does**: Detects conversational follow-ups and rewrites them into standalone questions using regex triggers and previous turn metadata.
+  - **Why it exists**: Resolves ambiguous references so retrieval can execute cleanly without carrying forward raw evidence chunks.
+
+---
+
+#### Retrieval Subsystem (`src/retrieval/`)
+- `src/retrieval/__init__.py`: Exposes retrieval store and functions.
+- `src/retrieval/store.py`:
+  - **What it does**: In-memory vector and keyword store. Computes deterministic 768-dimensional normalized embeddings, implements cosine similarity vector search, and performs keyword search. **Critically, filters `chunk.entitlements & caller_entitlements` directly inside the search loop.**
+  - **Why it exists**: Provides vector and lexical search capabilities with in-query access control.
+- `src/retrieval/hybrid.py`:
+  - **What it does**: Executes hybrid search combining vector and keyword rankings using **Reciprocal Rank Fusion (RRF)** with over-fetching ($3 \times k$). Includes an in-memory cache keyed on `(query, sorted_entitlements, k)`.
+  - **Why it exists**: Merges semantic and lexical retrieval while ensuring cache keys cannot be shared across different entitlement sets.
+
+---
+
+#### Tools Subsystem (`src/tools/`)
+- `src/tools/__init__.py`: Exposes tool registry and adapters.
+- `src/tools/spec.py`:
+  - **What it does**: Defines the `read_tool` decorator and `ReadToolSpec`. Enforces the 4 import-time safety checks:
+    1. Input model must have `extra="forbid"`.
+    2. Declared row limit must be between 1 and 1000.
+    3. Tool description must be non-empty.
+    4. Tool name must be unique.
+    Also provides `visible_tools(claims)` to filter tool schemas prior to planning.
+  - **Why it exists**: Enforces tool safety and guarantees the planner never encounters undeclared or unrestricted tools.
+- `src/tools/call.py`:
+  - **What it does**: Executes registered read tools. Verifies caller role claims, checks regional scope predicates, validates input arguments against Pydantic models, and wraps execution in OpenTelemetry spans.
+  - **Why it exists**: Serves as the secure execution gatekeeper for external data adapters.
+- `src/tools/adapters/erp.py`:
+  - **What it does**: Implements ERP read tools: `get_open_invoices` (requires `finance`), `get_open_pos` (requires `procurement`), and `revenue_by_region` (requires `finance`). Queries the real database repository.
+  - **Why it exists**: Connects the agent to enterprise financial and supply chain data.
+- `src/tools/adapters/crm.py`:
+  - **What it does**: Implements CRM and organizational read tools: `pipeline_changes`, `org_changes`, `dealer_contract_status`, and `dealer_revenue_trend`.
+  - **Why it exists**: Supplies commercial sales pipeline and organizational change evidence.
+- `src/tools/adapters/obs.py`:
+  - **What it does**: Implements observability read tools: `incidents_in_window` (requires `employee`). Returns production outage and latency data.
+  - **Why it exists**: Enables cross-system investigations linking business dips to technical incidents.
+
+---
+
+#### Corpus Subsystem (`src/corpus/`)
+- `src/corpus/__init__.py`: Exposes chunk models and pipeline.
+- `src/corpus/schema.py`:
+  - **What it does**: Defines `Chunk`, `SourceDoc`, and `IngestResult` Pydantic models with fields for `doc_id`, `locator`, `entitlements`, `trusted`, `updated_at`, and `content_hash`.
+  - **Why it exists**: Standardizes document structure and metadata tracking.
+- `src/corpus/chunker.py`:
+  - **What it does**: Structural document chunker. Splits documents along semantic boundaries (markdown headings, legal clauses `§2.1`, `Article 4`), preserves atomic code blocks, and assigns stable locator identifiers.
+  - **Why it exists**: Avoids arbitrary character-window splitting that severs legal clauses from their context.
+- `src/corpus/pipeline.py`:
+  - **What it does**: Ingestion pipeline with strict path-based entitlement resolution rules (`resolve_entitlements_for_path`). Fails closed if a file path does not match known policy rules. Performs idempotent chunk upserts via SHA-256 content hashes and prunes deleted sections (`prune_removed`).
+  - **Why it exists**: Prevents unclassified documents from entering the knowledge store.
+
+---
+
+#### Database Subsystem (`src/db/`)
+- `src/db/__init__.py`: Exposes database helpers and repository.
+- `src/db/database.py`:
+  - **What it does**: Database manager. Initializes the persistent SQLite schema (`platform/estate.db`) with foreign keys and tables: `documents`, `chunks`, `invoices`, `purchase_orders`, `incidents`, `audit_events`, and `users`. Seeds dev users with PBKDF2 password hashes on first launch.
+  - **Why it exists**: Provides durable local relational storage for development, evaluation, and live demonstration.
+- `src/db/repository.py`:
+  - **What it does**: Access-controlled data access layer (`EnterpriseRepository`). Implements methods for querying documents, invoices, purchase orders, incidents, overview metrics, unified search, and audit event recording. Every query validates caller entitlements and regions before reading rows.
+  - **Why it exists**: Centralizes database queries with built-in access control enforcement.
+
+---
+
+#### Telemetry Subsystem (`src/telemetry/`)
+- `src/telemetry/__init__.py`: Exposes tracer and cost meter.
+- `src/telemetry/setup.py`:
+  - **What it does**: Configures the OpenTelemetry SDK with an OTLP HTTP span exporter pointing to Jaeger (`http://localhost:4318/v1/traces`). Falls back gracefully to dummy spans if no collector is running.
+  - **Why it exists**: Delivers distributed tracing across requests, planning stages, and tool calls.
+- `src/telemetry/cost.py`:
+  - **What it does**: Thread-safe per-request token and cost tracking via Python `ContextVar` (`CTX_COST`). Calculates dollar costs based on input/output pricing configured in model profiles.
+  - **Why it exists**: Enables real-time cost monitoring and prevents token budget overruns.
+
+---
+
+#### LLM Subsystem (`src/llm/`)
+- `src/llm/__init__.py`: Exposes LLM client and structured generation helper.
+- `src/llm/client.py`:
+  - **What it does**: Production LLM gateway supporting local Ollama (`http://localhost:11434`) and OpenAI-compatible endpoints (`/chat/completions`). Enforces two retry attempts with validation feedback on schema parsing errors. Disallows silent fake fallbacks in production. Provides test client injection hooks for deterministic pytest suites.
+  - **Why it exists**: Abstracts model providers while guaranteeing strict JSON schema compliance.
+- Prompts (`src/llm/prompts/`):
+  - `plan.v1.md`: Versioned prompt instructing the model to generate tool calls and corpus queries.
+  - `standalone_question.v1.md`: Prompt instructing the model to rewrite conversational follow-ups into standalone questions.
+  - `synthesise.v3.md`: Prompt detailing the 7 honesty rules for grounded answer synthesis.
+  - `entailment.v1.md`: Prompt for checking whether evidence logically entails a given claim.
+
+---
+
+### 6.3 Platform & Infrastructure (`platform/`)
+
+- `platform/docker-compose.yml`: Multi-container orchestration definition:
+  - `postgres`: PostgreSQL 16 with `pgvector` extension, initializing `migrations/001_init.sql`.
+  - `keycloak`: Keycloak 26 identity provider running in dev mode, importing `realm-agent.json`.
+  - `ollama`: Local model inference server with volume mount for model weights.
+  - `jaeger`: Jaeger all-in-one tracing collector with UI on port 16686.
+  - `frontend`: Production Nginx container serving the built React UI on port 3000.
+- `platform/.env.example`: Template environment file configuring database credentials, ports, and secret keys.
+- `platform/migrations/001_init.sql`: PostgreSQL schema initialization script: creates `vector` extension, `chunk` table with HNSW and GIN indexes, `erp.invoices`, `erp.purchase_orders`, and `obs.incidents`.
+- `platform/profiles/local.yaml`: Model profile configuration defining model roles (`embed`: `nomic-embed-text`, `classify`: `llama3.2:3b`, `synthesise`: `llama3.1:8b`) and amortized compute pricing per 1k tokens.
+- `platform/keycloak/realm-agent.json`: Keycloak realm definition with `agent-api` audience, configured dev users, and role mappings.
+- `platform/dev_rsa_key.pem` & `platform/dev_rsa_pub.pem`: Local RSA 2048-bit private and public key pair used for minting and verifying RS256 JWT tokens.
+- `platform/estate.db`: Persistent SQLite database file storing enterprise records, documents, users, and audit logs.
+
+---
+
+### 6.4 Seeds & Corpus (`seeds/`)
+
+- `seeds/seed.py`: Idempotent database and vector store seeding script. Ingests corporate policy documents, chunks them structurally, and populates invoices, purchase orders, and observability incidents.
+- `seeds/sample/corpus/policy_refunds.md`: Corporate policy document defining returns windows (§2.1 standard 30 days, §2.3 expedition-grade 60 days).
+- `seeds/sample/corpus/policy_pricing.md`: Pricing authority policy (§5.1 discounts above 15% require Regional VP approval; restricted to `sales` and `finance` roles).
+- `seeds/sample/corpus/contracts_meridian_msa.md`: Legal Master Services Agreement specifying contract expiration on 31 March 2027.
+- `seeds/sample/corpus/supplier_notes_meridian.md`: Untrusted external supplier note claiming renewal through 2028 (used for testing untrusted content attribution).
+
+---
+
+### 6.5 Verification & Test Suites (`tests/`)
+
+- `tests/helpers.py`: Test utilities: `as_user(username)` helper to generate valid mock JWT tokens and `ask(question, ...)` helper to invoke the pipeline.
+- `tests/test_smoke.py`: Basic smoke test verifying module imports and fundamental pipeline integrity.
+- `tests/test_session_followup_entitlements.py`: Verifies the core security invariant:
+  - `test_shared_session_second_user_returns_nothing_first_user_entitled`: Confirms User 2 receives no data when asking a follow-up on User 1's privileged query.
+  - `test_two_turn_history_cap`: Confirms history retrieval is capped at 2 turns.
+  - `test_is_followup_pass_through`: Verifies explicit follow-up flag handling.
+  - `test_corpus_entitlement_isolation_in_shared_session`: Confirms restricted document chunks are not leaked across turns.
+- `tests/test_worked_examples.py`: Validates the 6 worked examples from the Autonomy Ladder guide:
+  - `test_e1_corpus_question`: Refund window policy retrieval.
+  - `test_e2_cross_system_investigation`: EMEA revenue dip vs. checkout 5xx incident vs. territory reassignment.
+  - `test_e3_scope_denial`: APAC open invoices query denied for EMEA-only user.
+  - `test_e4_decline_for_want_of_evidence`: Declining dealer relationship damage query due to lack of sentiment surveys.
+  - `test_e5_row_limit_reached`: Open purchase orders hitting the 200 row limit, returning `kind="partial"`.
+  - `test_e6_untrusted_content_attempting_to_steer`: Meridian agreement vs. supplier memo, attributing untrusted claims with low confidence.
+- `tests/test_definition_of_done.py`: Verifies architectural requirements: 4 import-time tool failures, `min_length=1` finding evidence, negative retrieval access control, cost metering, and evidence resolvability.
+
+---
+
+### 6.6 Frontend Application (`frontend/`)
+
+#### Frontend Root
+- `frontend/package.json`: Defines React 18, TypeScript, Tailwind CSS, Lucide icons, and Vite build configuration.
+- `frontend/vite.config.ts`: Configures Vite development server with proxy forwarding `/ask`, `/auth`, and `/api` to the backend on `http://localhost:8000`.
+- `frontend/tailwind.config.js` & `frontend/postcss.config.js`: Tailwind CSS styling and autoprefixer pipeline configuration.
+- `frontend/index.html`: HTML shell mounting the React single-page application.
+- `frontend/nginx.conf`: Production Nginx reverse proxy configuration for the containerized frontend.
+- `frontend/Dockerfile`: Multi-stage Docker build compiling the TypeScript app and packaging it into a minimal Alpine Nginx image.
+- `frontend/src/main.tsx`: Application bootstrap rendering `App` into the DOM.
+- `frontend/src/index.css`: Global Tailwind CSS directives and custom scrollbar styling.
+- `frontend/src/App.tsx`: Root React component managing navigation state, active user sessions, login modals, and route rendering across all 9 pages.
+
+#### API, Types & Hooks
+- `frontend/src/types/api.ts`: TypeScript interface definitions matching backend Pydantic models: `Answer`, `Finding`, `EvidenceRef`, `UserPersona`, `DocumentItem`, `InvoiceItem`, `PurchaseOrderItem`, `IncidentItem`, and `SystemItem`.
+- `frontend/src/api/client.ts`: Type-safe HTTP client with automatic `Authorization: Bearer <token>` injection, 401 token refresh retry logic, and API wrapper functions for all backend endpoints.
+- `frontend/src/hooks/useAuth.ts`: Manages user authentication state in `sessionStorage`, persona switching, login, registration, and logout workflows.
+- `frontend/src/hooks/useChat.ts`: Manages conversational chat history, session IDs, message submission, loading states, and error handling.
+
+#### Component Hierarchy (18 Components)
+- `Header.tsx`: Top application bar displaying active user persona, role badges, regional coverage, and switch user button.
+- `Navigation.tsx`: Sidebar navigation menu with tabs for Overview, Documents, Enterprise Data, Database, Systems, Search, Permissions, Audit Activity, and AI Workspace.
+- `Sidebar.tsx`: Collapsible sidebar displaying session details, active claims, and quick persona switching shortcuts.
+- `ChatWindow.tsx`: Scrollable message list rendering the conversational history and question suggestions.
+- `MessageItem.tsx`: Individual turn message renderer coordinating the answer card, findings panel, evidence, and honesty disclosures.
+- `QuestionInput.tsx`: Interactive input bar with textarea, character counter, explicit follow-up toggle, and prompt presets.
+- `AnswerCard.tsx`: Displays the top-level agent answer summary with visual status badges (`Answer Available`, `Partial Answer`, `Unable to Answer`).
+- `FindingsPanel.tsx`: Renders grounded findings with individual confidence badges and embedded evidence lists.
+- `EvidencePanel.tsx`: Renders granular evidence citations (source system, row locator, timestamp, data freshness).
+- `FollowupCard.tsx`: Highlights rewritten standalone questions so users can see how ambiguous follow-ups were interpreted.
+- `ConsideredRejected.tsx`: Displays alternative hypotheses that were investigated and disproven.
+- `ScopeLimits.tsx`: Displays data boundaries derived from caller claims in code.
+- `TruncatedSources.tsx`: Warns when tool row limits were reached, explaining that additional records exist.
+- `MissingSources.tsx`: Details the specific sources or permissions needed to answer declined queries.
+- `RequestDetails.tsx`: Collapsible technical panel displaying token usage, dollar cost, execution latency, and trace links.
+- `DocumentViewerModal.tsx`: Modal dialog for viewing full document content, inspecting chunk boundaries, and triggering AI actions (*Summarize*, *Explain*, *Ask*).
+- `LoginModal.tsx`: Quick modal for switching between the 6 built-in enterprise dev personas.
+- `LoadingState.tsx`: Animated multi-step progress indicator displaying pipeline stages (*Rewriting question*, *Planning*, *Querying ERP*, *Aligning evidence*, *Synthesizing*).
+
+#### Application Pages (9 Pages)
+- `OverviewPage.tsx`: Executive dashboard summarizing authorized document count, accessible invoices, POs, incidents, user queries, and quick links.
+- `DocumentsPage.tsx`: Enterprise knowledge repository displaying documents filtered by caller entitlements, with search and viewer modal integration.
+- `EnterpriseDataPage.tsx`: Interactive data explorer with tabs for ERP Invoices, Purchase Orders, and Observability Incidents, scoped strictly to caller roles and regions.
+- `DatabasePage.tsx`: Administrative database inspector showing engine status, file path, size in KB, live table row counts, raw table data browser, and re-seeding triggers.
+- `SystemsPage.tsx`: Architecture overview of connected systems (ERP, Observability, CRM, Corpus) displaying status, access mode, required roles, and safety guarantees.
+- `SearchPage.tsx`: Global unified search engine across authorized documents, invoices, and incidents with highlighted matching snippets.
+- `PermissionsPage.tsx`: Security audit console detailing authenticated subject, roles, regions, department, allowed tools, and denied tools with specific access deficiency reasons.
+- `ActivityPage.tsx`: Real-time audit log viewer displaying query timestamps, event types, subjects, tools called, response kinds, and rewritten questions.
+- `LoginPage.tsx`: Enterprise login and registration portal supporting OWASP password strength indicators, new user registration, and dev persona fast-login.
+
+---
+
+## 7. How to Run the Project
+
+### 7.1 Prerequisites
+- **Python**: Version `3.11` or higher.
+- **Node.js**: Version `18.0.0` or higher (with `npm`).
+- **Docker & Docker Compose**: (Optional, for full estate: PostgreSQL + pgvector, Keycloak, Jaeger, Ollama).
+
+---
+
+### 7.2 Running Locally (Fastest Development Setup)
+
+#### Step 1: Start the Backend API
+In your terminal (from the project root `c:\projects\agentic ai`):
+```powershell
+# Activate your virtual environment if applicable
+.\.venv\Scripts\Activate.ps1
+
+# Seed the database and vector store (idempotent)
+python seeds/seed.py
+
+# Start the FastAPI server
+uvicorn src.main:app --reload --port 8000
+```
+- **Backend API**: http://localhost:8000
+- **Interactive OpenAPI Documentation (Swagger UI)**: http://localhost:8000/docs
+
+#### Step 2: Start the Frontend UI
+In a second terminal window:
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+- **Frontend Application**: http://localhost:5173
+
+---
+
+### 7.3 Running via Docker Compose (Full Enterprise Estate)
+
+To run the complete enterprise infrastructure stack with PostgreSQL + pgvector, Keycloak, Jaeger, and Nginx:
+
+```powershell
+docker compose -f platform/docker-compose.yml up --build -d
+```
+- **Frontend Application**: http://localhost:3000
+- **FastAPI Backend**: http://localhost:8000
+- **Keycloak IAM**: http://localhost:8080 (Admin: `admin` / `change-me`)
+- **Jaeger Tracing UI**: http://localhost:16686
+- **Ollama LLM**: http://localhost:11434
+- **PostgreSQL**: Port `5432` (`agent` / `change-me`)
+
+To stop the estate:
+```powershell
+docker compose -f platform/docker-compose.yml down
+```
+
+---
+
+### 7.4 Running the Evaluation & Verification Test Suites
+
+#### Option A: Standalone Runner
+Run the evaluation test runner from the repository root:
+```powershell
+python run_evals.py
+```
+This runs all 15 core verification tests:
+- Shared session entitlement isolation (preventing context carry-over)
+- Strict two-turn history cap enforcement
+- Explicit `is_followup` pass-through
+- Corpus document entitlement isolation
+- Worked Examples E1 through E6
+- Definition of Done constraints (4 import-time failures, `min_length=1` evidence, negative retrieval, cost metering, resolvable evidence citations)
+
+#### Option B: Pytest
+```powershell
+pytest -v
+```
+
+---
+
+### 7.5 Running via Command Line Interface (CLI)
+
+You can interact with the agent directly from PowerShell using `src/cli.py`:
+
+```powershell
+# Ask about refund windows as an employee
+python src/cli.py "What is the return window for damaged goods?" --as-user dana.reyes
+
+# Ask about open invoices as Finance Lead
+python src/cli.py "Show me open invoices for SUP-001 in EMEA" --as-user finance.lead
+
+# Inquire about cross-system revenue dip
+python src/cli.py "Why was there an EMEA revenue dip last week?" --as-user finance.lead
+```
+
+---
+
+### 7.6 Live Demonstration Guide & Personas
+
+When exploring the frontend at http://localhost:5173, test the following scenarios using the persona switcher in the header:
+
+| Test Scenario | Persona to Select | Question to Submit | Expected System Behavior |
+| :--- | :--- | :--- | :--- |
+| **E1: Refund Policy** | `dana.reyes` (Support) | *"What is the return window for damaged goods?"* | Returns **Answer Available**: 30 days standard, 60 days expedition-grade, citing `policy/refunds.md §2.1 & §2.3`. |
+| **E2: Cross-System Dip** | `finance.lead` (Finance) | *"Why was there an EMEA revenue dip last week?"* | Investigates invoices, 5xx incidents, and CRM. Explains that the dip was caused by a 29.7-hour checkout incident, rejecting the territory reassignment hypothesis in `considered_and_rejected`. |
+| **E3: Scope Denial** | `finance.lead` (EMEA, NA) | *"Show me open invoices for APAC suppliers"* | Returns **Unable to Answer**: Explains that caller access covers EMEA and NA, declining APAC data. |
+| **E4: Insufficient Evidence**| `analyst` (Operations) | *"Did the checkout incident damage dealer relationships?"* | Returns **Unable to Answer**: Declines for lack of evidence, explicitly listing missing sources (dealer support sentiment & quarterly surveys). |
+| **E5: Row Limit Truncation**| `procurement.lead` (Procurement) | *"Show me open purchase orders"* | Returns **Partial Answer**: Returns 200 orders totaling €1.94m and lists `erp.purchase_orders (limit 200 reached)` in `truncated_sources`. |
+| **E6: Untrusted Content** | `procurement.lead` (Procurement) | *"What is the term of the Meridian agreement?"* | Returns MSA expiration (31 March 2027) with high confidence. Reports the supplier extension note with `confidence="low"` and marks it untrusted. |
+| **The Trap Prevention** | `finance.lead` then `dana.reyes` | Turn 1: *"Show me open invoices for SUP-001"*<br>Turn 2: *"What was the amount of that?"* | Turn 1 answers with invoice amounts. Turn 2 rewrites the question, checks `dana.reyes`'s claims (lacking `finance`), and **declines completely with zero data leaked**. |
